@@ -4,6 +4,7 @@ from elasticsearch import AsyncElasticsearch
 es: Optional[AsyncElasticsearch] = None
 
 
-# Функция для внедрения зависимостей
 async def get_elastic() -> AsyncElasticsearch:
+    """Функция для внедрения зависимостей."""
+
     return es

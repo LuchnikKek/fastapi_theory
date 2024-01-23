@@ -4,6 +4,7 @@ from redis.asyncio import Redis
 redis: Optional[Redis] = None
 
 
-# Функция для внедрения зависимостей
 async def get_redis() -> Redis:
+    """Функция для внедрения зависимостей."""
+
     return redis
