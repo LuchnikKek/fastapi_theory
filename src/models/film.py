@@ -1,3 +1,5 @@
+from typing import Optional
+
 import orjson
 
 from pydantic import BaseModel, UUID4
@@ -15,8 +17,8 @@ class Film(BaseModel):
     """
     id: UUID4
     title: str
-    description: str = None
-    imdb_rating: float = 0.0
+    description: Optional[str] = None
+    imdb_rating: Optional[float] = 0.0
 
     class Config:
         """Заменяем стандартную работу с json на более быструю."""
