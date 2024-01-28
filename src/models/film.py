@@ -1,6 +1,6 @@
 import orjson
 
-from pydantic import BaseModel
+from pydantic import BaseModel, UUID4
 
 
 def orjson_dumps(v, *, default) -> str:
@@ -13,9 +13,10 @@ class Film(BaseModel):
 
     Мы уже создавали одну модель, но она использовалась только в рамках API
     """
-    id: str
+    id: UUID4
     title: str
-    description: str
+    description: str = None
+    imdb_rating: float = 0.0
 
     class Config:
         """Заменяем стандартную работу с json на более быструю."""

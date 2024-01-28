@@ -1,8 +1,8 @@
 from http import HTTPStatus
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, UUID4
 from src.services.film import FilmService, get_film_service
 
 router = APIRouter()
@@ -11,33 +11,36 @@ router = APIRouter()
 class Film(BaseModel):
     """Модель Фильма для ответа API."""
 
-    id: str
+    id: UUID4
     title: str
+    imdb_rating: Optional[float] = 0.0
 
 
-# С помощью декоратора регистрируем обработчик film_details
-# На обработку запросов по адресу <some_prefix>/film_id
-# В сигнатуре функции указываем тип данных, получаемый из адреса запроса (film_id: str)
-# Внедряем FilmService с помощью Depends(get_film_service)
-# И указываем тип возвращаемого объекта — Film
-@router.get('/{film_id}', response_model=Film)
-async def film_details(film_id: str, film_service: FilmService = Depends(get_film_service)) -> Film:
-    """Ручка получения информации о Фильме по id.
-
-    Если фильм не найден, отдаём 404 статус.
-    Стоит пользоваться уже определёнными HTTP-статусами, которые содержат enum.
-        Такой код будет более поддерживаемым.
-
-    Перекладываем нужные поля из models.Film в Film.
-    У модели бизнес-логики есть поле description,
-        Которое отсутствует в модели ответа API.
-        Если бы использовалась общая модель для бизнес-логики и формирования ответов API
-        мы бы предоставляли клиентам лишние данные,
-        и, возможно, данные, которые опасно возвращать.
-    """
+@router.get('/{film_id}',
+            summary='Получение фильма по ID',
+            response_description="Название и рейтинг фильма",)
+async def film_details(film_id: UUID4, film_service: FilmService = Depends(get_film_service)) -> Film:
+    """Ручка получения информации о Фильме по id."""
     film = await film_service.get_by_id(film_id)
 
     if not film:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail='film not found')
 
     return Film(id=film.id, title=film.title)
+
+
+@router.get('/',
+            response_model=list[Film],
+            summary='Получение списка фильмов',
+            response_description="Название и рейтинг фильма",)
+async def films_all(
+        page_number: Annotated[int, Query(ge=1)],
+        size: Annotated[int, Query(ge=1, le=100)],
+        film_service: FilmService = Depends(get_film_service)) -> list[Film]:
+    """Ручка получения информации о Фильмах."""
+    # temporary hardcoded sort
+    sort = {'imdb_rating': 'desc', 'title.raw': 'asc'}
+
+    films = await film_service.get_page(page_number, size, sort)
+
+    return [Film(id=film.id, title=film.title, imdb_rating=film.imdb_rating) for film in films]
