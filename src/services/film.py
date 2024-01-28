@@ -4,6 +4,7 @@ from typing import Optional, Any
 import orjson
 from elasticsearch import AsyncElasticsearch, NotFoundError
 from fastapi import Depends
+from pydantic import UUID4
 from redis.asyncio import Redis
 from redis.typing import KeyT
 
@@ -44,21 +45,21 @@ class FilmService:
 
         return film
 
-    async def _get_film_from_elastic(self, film_id: str) -> Optional[Film]:
+    async def _get_film_from_elastic(self, film_id: UUID4) -> Optional[Film]:
         """Пытаемся получить данные о фильме из хранилища ElasticSearch."""
 
         try:
-            doc = await self.elastic.get(index='movies', id=film_id)
+            doc = await self.elastic.get(index='movies', id=str(film_id))
         except NotFoundError:
             return None
         return Film(**doc['_source'])
 
-    async def _film_from_cache(self, film_id: str) -> Optional[Film]:
+    async def _film_from_cache(self, film_id: UUID4) -> Optional[Film]:
         """Пытаемся получить данные о фильме из кеша, используя команду get.
 
         Redis documentation: https://redis.io/commands/get/
         """
-        data = await self.redis.get(film_id)
+        data = await self.redis.get(str(film_id))
         if not data:
             return None
 
@@ -74,45 +75,47 @@ class FilmService:
         https://redis.io/commands/set/
         pydantic позволяет сериализовать модель в json
         """
-        await self.redis.set(film.id, film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
+        await self.redis.set(str(film.id), film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
 
     @staticmethod
     async def _get_previous_record_number(page_number, size):
         return (page_number - 1) * size - 1
 
     @staticmethod
-    async def _get_record_key(sort, record_number):
+    async def _generate_record_key(sort, record_number):
         return 'movies/' + str(sort) + '/' + str(record_number)
 
-    async def _get_search_after(self, previous_record, sort) -> Optional[list]:
-        if previous_record < 0:
+    async def _get_search_after_from_elastic(self, previous_record: int, sort: dict[str, Any]) -> Optional[list]:
+        """
+        Raises IndexError: if previous_record >= count of records in index
+        """
+        if previous_record == -1:
             return None
 
         data = await self.elastic.search(from_=previous_record, size=1, index='movies', sort=sort,
                                          source_includes=tuple(sort.keys()))
 
-        hits = data['hits']['hits']
-
-        search_after = hits[0]['sort'] if hits else None
+        search_after = data['hits']['hits'][0]['sort']
         return search_after
 
     async def get_page(self, page_number: int, size: int, sort: dict[str, Any]) -> list[Film]:
-        """Returns list of films."""
-        search_after_number = await self._get_previous_record_number(page_number, size)
-        previous_record_key = await self._get_record_key(sort, search_after_number)
+        """Не работает при page_number = 1000, size = 1"""
+        previous_record_number = await self._get_previous_record_number(page_number, size)
+        previous_record_key = await self._generate_record_key(sort, previous_record_number)
 
         if await self._key_in_cache(previous_record_key):
             search_after = await self._get_search_after_from_cache(previous_record_key)
         else:
-            search_after = await self._get_search_after(search_after_number, sort)
-            if search_after is None:
+            try:
+                search_after = await self._get_search_after_from_elastic(previous_record_number, sort)
+            except IndexError:
                 return []
             await self._put_search_after_to_cache(previous_record_key, search_after)
 
         films_data = await self._search_after_films_from_elastic(sort, size, search_after)
 
         future_search_after_number = await self._get_previous_record_number(page_number + 1, size)
-        future_search_after_key = await self._get_record_key(sort, future_search_after_number)
+        future_search_after_key = await self._generate_record_key(sort, future_search_after_number)
 
         if not await self._key_in_cache(future_search_after_key):
             await self._put_search_after_to_cache(future_search_after_key, films_data[-1]['sort'])
