@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     # Когда происходит on_startup, тебе хочется, чтобы on_shutdown гарантировано произошёл
     # Этим lifespan и занимается.
     redis.redis = Redis(host=config.REDIS_HOST, port=config.REDIS_PORT)
-    elastic.es = AsyncElasticsearch(hosts=[f'{config.ELASTIC_HOST}:{config.ELASTIC_PORT}'])
+    elastic.es = AsyncElasticsearch(hosts=[f'http://{config.ELASTIC_HOST}:{config.ELASTIC_PORT}'])
     yield
     # Отключаемся от баз при выключении сервера
     await redis.redis.close()
@@ -30,11 +30,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=config.PROJECT_NAME,
+    title='Read-only API для онлайн-кинотеатра',
+    description='Информация о фильмах, жанрах и людях, участвовавших в создании произведения',
+    version='1.0.0',
     docs_url='/api/openapi',
     openapi_url='/api/openapi.json',
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
+    debug=True,
+    log_config=LOGGING,
+    log_level=logging.DEBUG,
 )
 
 # Подключаем роутер к серверу, указав префикс (endpoint)
@@ -44,7 +49,7 @@ app.include_router(films.router, prefix='/api/v1/films', tags=['films'])
 if __name__ == '__main__':
     uvicorn.run(
         'main:app',
-        host='0.0.0.0',
+        host='localhost',
         port=8000,
         log_config=LOGGING,
         log_level=logging.DEBUG,

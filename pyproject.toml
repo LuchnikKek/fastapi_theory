@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "fastapi-theory"
+name = "app"
 version = "0.1.0"
 description = ""
 authors = ["LuchnikKek <ilua.Kabeshov01@mail.ru>"]
@@ -7,7 +7,6 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-pydantic = "^2.5.3"
 fastapi = "^0.109.0"
 uvicorn = "^0.26.0"
 uvloop = "^0.19.0"
