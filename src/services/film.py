@@ -78,11 +78,11 @@ class FilmService:
         await self.redis.set(str(film.id), film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
 
     @staticmethod
-    async def _get_previous_record_number(page_number, size):
+    async def _get_previous_record_number(page_number: int, size: int) -> int:
         return (page_number - 1) * size - 1
 
     @staticmethod
-    async def _generate_record_key(sort, record_number):
+    async def _generate_record_key(sort, record_number: int) -> str:
         return 'movies/' + str(sort) + '/' + str(record_number)
 
     async def _get_search_after_from_elastic(self, previous_record: int, sort: dict[str, Any]) -> Optional[list]:
@@ -98,8 +98,10 @@ class FilmService:
         search_after = data['hits']['hits'][0]['sort']
         return search_after
 
-    async def get_page(self, page_number: int, size: int, sort: dict[str, Any]) -> list[Film]:
+    async def get_page(self, page_number: int, size: int, sort=None) -> list[Film]:
         """Не работает при page_number = 1000, size = 1"""
+        if sort is None:
+            sort = {'id': 'asc'}
         previous_record_number = await self._get_previous_record_number(page_number, size)
         previous_record_key = await self._generate_record_key(sort, previous_record_number)
 

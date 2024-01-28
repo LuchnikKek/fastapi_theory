@@ -36,11 +36,18 @@ async def film_details(film_id: UUID4, film_service: FilmService = Depends(get_f
 async def films_all(
         page_number: Annotated[int, Query(ge=1)],
         size: Annotated[int, Query(ge=1, le=100)],
-        film_service: FilmService = Depends(get_film_service)) -> list[Film]:
+        sort: Annotated[
+            str, Query(pattern="^-?imdb_rating$", description="Sort field. Use \"-\" for inverse sort.")
+        ] = None,
+        film_service: FilmService = Depends(get_film_service),
+) -> list[Film]:
     """Ручка получения информации о Фильмах."""
-    # temporary hardcoded sort
-    sort = {'imdb_rating': 'desc', 'title.raw': 'asc'}
 
-    films = await film_service.get_page(page_number, size, sort)
+    if sort:
+        sort_query = {'imdb_rating': 'desc' if sort.startswith('-') else 'asc'}
+    else:
+        sort_query = None
+
+    films = await film_service.get_page(page_number, size, sort_query)
 
     return [Film(id=film.id, title=film.title, imdb_rating=film.imdb_rating) for film in films]
