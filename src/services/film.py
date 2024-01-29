@@ -49,10 +49,10 @@ class FilmService:
         """Пытаемся получить данные о фильме из хранилища ElasticSearch."""
 
         try:
-            doc = await self.elastic.get(index='movies', id=str(film_id))
+            doc = await self.elastic.get(index="movies", id=str(film_id))
         except NotFoundError:
             return None
-        return Film(**doc['_source'])
+        return Film(**doc["_source"])
 
     async def _film_from_cache(self, film_id: UUID4) -> Optional[Film]:
         """Пытаемся получить данные о фильме из кеша, используя команду get.
@@ -82,50 +82,75 @@ class FilmService:
         return (page_number - 1) * size - 1
 
     @staticmethod
-    async def _generate_record_key(sort, record_number: int) -> str:
-        return 'movies/' + str(sort) + '/' + str(record_number)
+    async def _generate_record_key(record_number: int, sort: dict = None, filter_query: dict = None) -> str:
+        return "movies/" + str(sort) + "/" + str(record_number) + "/" + str(filter_query)
 
-    async def _get_search_after_from_elastic(self, previous_record: int, sort: dict[str, Any]) -> Optional[list]:
+    async def _get_search_after_from_elastic(
+        self, previous_record: int, sort: dict[str, Any], filter_query: dict
+    ) -> Optional[list]:
         """
         Raises IndexError: if previous_record >= count of records in index
         """
         if previous_record == -1:
             return None
 
-        data = await self.elastic.search(from_=previous_record, size=1, index='movies', sort=sort,
-                                         source_includes=tuple(sort.keys()))
-
-        search_after = data['hits']['hits'][0]['sort']
+        data = await self.elastic.search(
+            from_=previous_record,
+            size=1,
+            index="movies",
+            sort=sort,
+            source_includes=tuple(sort.keys()),
+            query=filter_query,
+        )
+        search_after = data["hits"]["hits"][0]["sort"]
         return search_after
 
-    async def get_page(self, page_number: int, size: int, sort=None) -> list[Film]:
+    @staticmethod
+    async def _format_sort_query(sort_q: str) -> dict[str, str]:
+        if sort_q:
+            return {"imdb_rating": "desc" if sort_q.startswith("-") else "asc"}
+        else:
+            return {"id": "asc"}
+
+    @staticmethod
+    async def _format_filter_query(filter_q: UUID4) -> dict:
+        query = {"nested": {"path": "genre", "query": {"term": {"genre.id": str(filter_q)}}}}
+        return query
+
+    async def get_page(self, page_number: int, size: int, sort_q=None, filter_q=None) -> list[Film]:
         """Не работает при page_number = 1000, size = 1"""
-        if sort is None:
-            sort = {'id': 'asc'}
+        sort_query = await self._format_sort_query(sort_q)
+        filter_query = None
+        if filter_q:
+            filter_query = await self._format_filter_query(filter_q)
+
         previous_record_number = await self._get_previous_record_number(page_number, size)
-        previous_record_key = await self._generate_record_key(sort, previous_record_number)
+        previous_record_key = await self._generate_record_key(previous_record_number, sort_query, filter_query)
 
         if await self._key_in_cache(previous_record_key):
             search_after = await self._get_search_after_from_cache(previous_record_key)
         else:
             try:
-                search_after = await self._get_search_after_from_elastic(previous_record_number, sort)
+                search_after = await self._get_search_after_from_elastic(
+                    previous_record_number, sort_query, filter_query
+                )
             except IndexError:
                 return []
             await self._put_search_after_to_cache(previous_record_key, search_after)
 
-        films_data = await self._search_after_films_from_elastic(sort, size, search_after)
+        films_data = await self._search_after_films_from_elastic(size, search_after, sort_query, filter_query)
 
         future_search_after_number = await self._get_previous_record_number(page_number + 1, size)
-        future_search_after_key = await self._generate_record_key(sort, future_search_after_number)
+        future_search_after_key = await self._generate_record_key(future_search_after_number, sort_query, filter_query)
 
         if not await self._key_in_cache(future_search_after_key):
-            await self._put_search_after_to_cache(future_search_after_key, films_data[-1]['sort'])
+            await self._put_search_after_to_cache(future_search_after_key, films_data[-1]["sort"])
 
-        return [Film(**film['_source']) for film in films_data]
+        return [Film(**film["_source"]) for film in films_data]
 
-    async def _search_after_films_from_elastic(self, sort: dict[str, Any], size: int, search_after: dict[str, Any]) -> \
-            Optional[list[Film]]:
+    async def _search_after_films_from_elastic(
+        self, size: int, search_after: dict[str, Any], sort: dict[str, Any], filter_query: dict[str, dict[str, str]]
+    ) -> Optional[list[Film]]:
         """Gets films from elastic using search_after scroll.
 
         :param sort: A dict with sort params. Keys=fields, values=order. e.g. {'title': 'asc', 'description': 'desc'}.
@@ -133,9 +158,10 @@ class FilmService:
         :param search_after: A dict with search_after param. Keys=fields, values=values of record to start from.
         :return: A list of Films.
         """
-        films = await self.elastic.search(search_after=search_after, index='movies', sort=sort, size=size)
-
-        films_data = [film for film in films['hits']['hits']]
+        films = await self.elastic.search(
+            search_after=search_after, index="movies", sort=sort, size=size, query=filter_query
+        )
+        films_data = [film for film in films["hits"]["hits"]]
 
         return films_data
 
@@ -173,8 +199,8 @@ class FilmService:
 
 @lru_cache()
 def get_film_service(
-        redis: Redis = Depends(get_redis),
-        elastic: AsyncElasticsearch = Depends(get_elastic),
+    redis: Redis = Depends(get_redis),
+    elastic: AsyncElasticsearch = Depends(get_elastic),
 ) -> FilmService:
     """Провайдер FilmService.
 

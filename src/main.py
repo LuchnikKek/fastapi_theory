@@ -1,7 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
 
-import uvicorn
 from elasticsearch import AsyncElasticsearch
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
@@ -15,14 +14,8 @@ from src.db import elastic, redis
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Подключаемся к базам при старте сервера
-    # Подключиться можем при работающем event-loop
-    # Поэтому логика подключения происходит в асинхронной функции.
-    # lifespan предпочтительнее, чем on_startup+on_shutdown
-    # Когда происходит on_startup, тебе хочется, чтобы on_shutdown гарантировано произошёл
-    # Этим lifespan и занимается.
     redis.redis = Redis(host=config.REDIS_HOST, port=config.REDIS_PORT)
-    elastic.es = AsyncElasticsearch(hosts=[f'http://{config.ELASTIC_HOST}:{config.ELASTIC_PORT}'])
+    elastic.es = AsyncElasticsearch(hosts=[f"http://{config.ELASTIC_HOST}:{config.ELASTIC_PORT}"])
     yield
     # Отключаемся от баз при выключении сервера
     await redis.redis.close()
@@ -30,11 +23,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title='Read-only API для онлайн-кинотеатра',
-    description='Информация о фильмах, жанрах и людях, участвовавших в создании произведения',
-    version='1.0.0',
-    docs_url='/api/openapi',
-    openapi_url='/api/openapi.json',
+    title="Read-only API for online Cinema.",
+    description="Information about films, genres and people involved in the creation.",
+    version="0.0.2",
+    docs_url="/api/openapi",
+    openapi_url="/api/openapi.json",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     debug=True,
@@ -42,15 +35,4 @@ app = FastAPI(
     log_level=logging.DEBUG,
 )
 
-# Подключаем роутер к серверу, указав префикс (endpoint)
-# Теги нужны для удобства навигации по документации
-app.include_router(films.router, prefix='/api/v1/films', tags=['films'])
-
-if __name__ == '__main__':
-    uvicorn.run(
-        'main:app',
-        host='localhost',
-        port=8000,
-        log_config=LOGGING,
-        log_level=logging.DEBUG,
-    )
+app.include_router(films.router, prefix="/api/v1/films", tags=["Films"])
