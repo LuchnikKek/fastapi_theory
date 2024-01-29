@@ -1,13 +1,13 @@
-"""Backend Model for Film."""
+"""Models for API v1."""
 
 from typing import Optional
 
 from pydantic import Field
 
-from src.models.mixins import UUIDMixin
+from src.models.mixins import TypedMixin, UUIDMixin
 
 
-class PersonInline(UUIDMixin):
+class PersonInline(TypedMixin, UUIDMixin):
     full_name: str = Field(alias="name")
 
 
@@ -23,13 +23,11 @@ class DirectorInline(PersonInline):
     pass
 
 
-class GenreInline(UUIDMixin):
+class GenreInline(TypedMixin, UUIDMixin):
     name: str
 
 
-class Film(UUIDMixin):
-    """Movie model used only within business-logic."""
-
+class FilmLong(TypedMixin, UUIDMixin):
     title: str
     description: Optional[str] = None
     imdb_rating: float = 0.0
@@ -37,3 +35,8 @@ class Film(UUIDMixin):
     actors: Optional[list[ActorInline]] = None
     writers: Optional[list[WriterInline]] = None
     directors: Optional[list[DirectorInline]] = None
+
+
+class FilmShort(TypedMixin, UUIDMixin):
+    title: str
+    imdb_rating: float = 0.0

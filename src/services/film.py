@@ -25,8 +25,8 @@ class FilmService:
         self.redis = redis
         self.elastic = elastic
 
-    async def get_by_id(self, film_id: str) -> Optional[Film]:
-        """Возвращает объект Фильма по ID.
+    async def get_by_uuid(self, film_uuid: str) -> Optional[Film]:
+        """Возвращает объект Фильма по UUID.
 
         Пытаемся получить данные из кеша `_film_from_cache`, потому что он работает быстрее.
         Если фильма нет в кеше, то ищем его в Elasticsearch через `_get_film_from_elastic`.
@@ -35,31 +35,31 @@ class FilmService:
 
         Опционален, так как фильм может отсутствовать в базе
         """
-        film = await self._film_from_cache(film_id)
+        film = await self._film_from_cache(film_uuid)
 
         if not film:
-            film = await self._get_film_from_elastic(film_id)
+            film = await self._get_film_from_elastic(film_uuid)
             if not film:
                 return None
             await self._put_film_to_cache(film)
 
         return film
 
-    async def _get_film_from_elastic(self, film_id: UUID4) -> Optional[Film]:
+    async def _get_film_from_elastic(self, film_uuid: UUID4) -> Optional[Film]:
         """Пытаемся получить данные о фильме из хранилища ElasticSearch."""
 
         try:
-            doc = await self.elastic.get(index="movies", id=str(film_id))
+            doc = await self.elastic.get(index="movies", id=str(film_uuid))
         except NotFoundError:
             return None
         return Film(**doc["_source"])
 
-    async def _film_from_cache(self, film_id: UUID4) -> Optional[Film]:
+    async def _film_from_cache(self, film_uuid: UUID4) -> Optional[Film]:
         """Пытаемся получить данные о фильме из кеша, используя команду get.
 
         Redis documentation: https://redis.io/commands/get/
         """
-        data = await self.redis.get(str(film_id))
+        data = await self.redis.get(str(film_uuid))
         if not data:
             return None
 
@@ -75,7 +75,7 @@ class FilmService:
         https://redis.io/commands/set/
         pydantic позволяет сериализовать модель в json
         """
-        await self.redis.set(str(film.id), film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
+        await self.redis.set(str(film.uuid), film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
 
     @staticmethod
     async def _get_previous_record_number(page_number: int, size: int) -> int:
