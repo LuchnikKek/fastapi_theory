@@ -16,4 +16,5 @@ RUN python -m pip install --no-cache-dir poetry==1.7.1 \
     && poetry install --no-interaction --no-ansi \
     && rm -rf $(poetry config cache-dir)/{cache,artifacts}
 
-ENTRYPOINT uvicorn src.main:app --host api --port $API_PORT --reload
+ENTRYPOINT gunicorn src.main:app --bind api:8000 -k uvicorn.workers.UvicornWorker --reload
+#ENTRYPOINT uvicorn src.main:app --host api --port $API_PORT --reload

@@ -11,6 +11,28 @@ from src.services.film import FilmService, get_film_service
 router = APIRouter()
 
 
+@router.get("/search")
+async def search_films(
+    query: str,
+    page_number: Annotated[int, Query(description="Page number.", ge=1)] = 1,
+    size: Annotated[int, Query(description="Page size.", ge=1, le=100)] = 10,
+    film_service: FilmService = Depends(get_film_service),
+) -> ORJSONResponse:
+    records = await film_service.search_films_paginated(page_number, size, search_query=("title", query))
+    if not records:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
+
+    films = [FilmShort(**film.model_dump()) for film in records]
+    response_data = [film.model_dump() for film in films]
+    response = {
+        "data": {"type": "Array", "id": page_number, "data": response_data},
+        "links": {"first": 1, "next": page_number + 1},
+    }
+    if page_number > 1:
+        response["links"]["prev"] = page_number - 1
+    return ORJSONResponse(response)
+
+
 @router.get("/", summary="Get films list", response_description="List of Film objects.")
 async def films_all(
     page_number: Annotated[int, Query(description="Page number.", ge=1)] = 1,
@@ -54,28 +76,6 @@ async def film_details(film_uuid: UUID4, film_service: FilmService = Depends(get
     data = FilmLong(**film.model_dump())
     response = {"data": data.model_dump()}
 
-    return ORJSONResponse(response)
-
-
-@router.get("/search/{query}")
-async def search_films(
-    query: str,
-    page_number: Annotated[int, Query(description="Page number.", ge=1)] = 1,
-    size: Annotated[int, Query(description="Page size.", ge=1, le=100)] = 10,
-    film_service: FilmService = Depends(get_film_service),
-) -> ORJSONResponse:
-    records = await film_service.search_films_paginated(page_number, size, search_query=("title", query))
-    if not records:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
-
-    films = [FilmShort(**film.model_dump()) for film in records]
-    response_data = [film.model_dump() for film in films]
-    response = {
-        "data": {"type": "Array", "id": page_number, "data": response_data},
-        "links": {"first": 1, "next": page_number + 1},
-    }
-    if page_number > 1:
-        response["links"]["prev"] = page_number - 1
     return ORJSONResponse(response)
 
 

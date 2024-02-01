@@ -47,7 +47,7 @@ class SortFormatter(BaseFormatter):
     def _get_sort_query(sort_param) -> tuple:
         return ({sort_param[1:]: "desc"} if sort_param.startswith("-") else {sort_param: "asc"},)
 
-    def format(self, **params) -> typing.Optional[tuple]:
+    def format(self, **params) -> tuple:
         if params.get("sort"):
             return self._get_sort_query(params.get("sort"))
         else:

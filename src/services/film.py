@@ -66,7 +66,7 @@ class FilmService:
         return Film(**doc["_source"])
 
     @staticmethod
-    async def _generate_record_key(record_number: int, sort: dict = None, query: dict = None) -> str:
+    async def _generate_record_key(record_number: int, sort: tuple[dict] = None, query: dict = None) -> str:
         return "movies/" + str(sort) + "/" + str(record_number) + "/" + str(query)
 
     async def _get_previous_record_search_after(
@@ -81,7 +81,7 @@ class FilmService:
             {key4: val4, key5: val5}
         ) -> tuple(key1, key2, key3, key4, key5)
         """
-        include_only = tuple(itertools.chain.from_iterable(sort)) if sort else None
+        include_only = tuple(itertools.chain.from_iterable(sort))
 
         data = await self.elastic.search(
             from_=record_number - 1,

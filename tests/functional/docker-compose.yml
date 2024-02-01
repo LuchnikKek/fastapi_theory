@@ -1,0 +1,19 @@
+version: '3.8'
+
+
+services:
+  tests:
+    build: .
+    entrypoint: >
+      sh -c "pip install -r ./requirements.txt
+      && python3 ./utils/wait_for_es.py
+      && python3 ./utils/wait_for_redis.py
+      && pytest ./src"
+    ports:
+      - "1234:1234"
+    networks:
+      - new_network
+
+networks:
+  new_network:
+    external: true
