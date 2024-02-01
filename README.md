@@ -6,7 +6,8 @@ _Just playground._
 
 ## Список реализованного
 
-- Получение всех фильмов, конкретного фильма.
+- Получение всех фильмов, детальной информации о конкретном.
+- Нечёткий поиск по заголовку.
 - Фильтр по жанру, сортировка по рейтингу.
 - Модель `Film` для backend. Модели `FilmShort` и `FilmLong` для API.
 - Пагинация через `search_after`.
@@ -14,7 +15,7 @@ _Just playground._
 - Пачки фильмов кэшируют сам курсор, что кратно экономит кэш. Ключ составной, из всех параметров. Коллизий не возникает.
 - Контроль закрытия соединения с ES и Redis через `lifespan`.
 - Провайдер `FilmService`, работающий с бизнес-логикой.
-- Dependency Injection между вложенными объектами: **Ручки <-> FilmService <-> Elastic+Redis**. Некоторый MVC.
+- Dependency Injection между вложенными объектами: **Ручки <-> FilmService <-> Elastic+Redis**.
 - Dockerfile с poetry.
 
 ---
@@ -45,6 +46,17 @@ _Just playground._
 |:----------|:------|:------------------------------------|
 | `uuid`    | `str` | **Required**. UUID of film to fetch |
 
+#### Find film by title
+
+```http
+  GET /api/v1/films/search/<title>
+```
+
+| Parameter     | Type   | Description                                    |
+|:--------------|:-------|:-----------------------------------------------|
+| `page_number` | `int`  | **Required**. Page number to paginate.         |
+| `size`        | `int`  | **Required**. Count of films on page.          |
+| `title`       | `str`  | **Required**. Film title to search. 
 
 ## Немного о работе API
 
