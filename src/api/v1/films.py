@@ -29,8 +29,7 @@ async def films_all(
     ] = None,
     film_service: FilmService = Depends(get_film_service),
 ) -> ORJSONResponse:
-
-    records = await film_service.get_page(page_number, size, sort=sort, genre_uuid=genre_uuid)
+    records = await film_service.search_films_paginated(page_number, size, sort=sort, genre_uuid=genre_uuid)
     if not records:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
 
@@ -47,7 +46,7 @@ async def films_all(
 
 @router.get("/{film_uuid}", summary="Get Film by UUID", response_description="Film title and rating")
 async def film_details(film_uuid: UUID4, film_service: FilmService = Depends(get_film_service)) -> ORJSONResponse:
-    film = await film_service.get_by_uuid(film_uuid)
+    film = await film_service.get_by_uuid(str(film_uuid))
 
     if not film:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Film not found.")
@@ -65,7 +64,7 @@ async def search_films(
     size: Annotated[int, Query(description="Page size.", ge=1, le=100)] = 10,
     film_service: FilmService = Depends(get_film_service),
 ) -> ORJSONResponse:
-    records = await film_service.get_page(page_number, size, search_query=("title", query))
+    records = await film_service.search_films_paginated(page_number, size, search_query=("title", query))
     if not records:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
 
@@ -83,5 +82,4 @@ async def search_films(
 @router.get(
     "/similar/{film_uuid}", summary="Get similar Films by Film UUID", response_description="Film title and rating"
 )
-async def film_similar(film_uuid: UUID4, film_service: FilmService = Depends(get_film_service)) -> list[FilmShort]:
-    pass
+async def film_similar(film_uuid: UUID4, film_service: FilmService = Depends(get_film_service)) -> list[FilmShort]: ...
