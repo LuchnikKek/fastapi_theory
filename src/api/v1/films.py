@@ -30,7 +30,7 @@ async def films_all(
     film_service: FilmService = Depends(get_film_service),
 ) -> ORJSONResponse:
 
-    records = await film_service.get_page(page_number, size, sort, genre_uuid)
+    records = await film_service.get_page(page_number, size, sort=sort, genre_uuid=genre_uuid)
     if not records:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
 
@@ -55,6 +55,28 @@ async def film_details(film_uuid: UUID4, film_service: FilmService = Depends(get
     data = FilmLong(**film.model_dump())
     response = {"data": data.model_dump()}
 
+    return ORJSONResponse(response)
+
+
+@router.get("/search/{query}")
+async def search_films(
+    query: str,
+    page_number: Annotated[int, Query(description="Page number.", ge=1)] = 1,
+    size: Annotated[int, Query(description="Page size.", ge=1, le=100)] = 10,
+    film_service: FilmService = Depends(get_film_service),
+) -> ORJSONResponse:
+    records = await film_service.get_page(page_number, size, search_query=("title", query))
+    if not records:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Films not found.")
+
+    films = [FilmShort(**film.model_dump()) for film in records]
+    response_data = [film.model_dump() for film in films]
+    response = {
+        "data": {"type": "Array", "id": page_number, "data": response_data},
+        "links": {"first": 1, "next": page_number + 1},
+    }
+    if page_number > 1:
+        response["links"]["prev"] = page_number - 1
     return ORJSONResponse(response)
 
 

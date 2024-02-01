@@ -1,3 +1,4 @@
+import itertools
 from functools import lru_cache
 from typing import Optional, Any
 
@@ -12,6 +13,7 @@ from src.core.config import FILM_CACHE_EXPIRE_IN_SECONDS
 from src.db.elastic import get_elastic
 from src.db.redis import get_redis
 from src.models.film import Film
+from src.services.formatters import SortFormatter, QueryFormatter
 
 
 class FilmService:
@@ -20,6 +22,9 @@ class FilmService:
     Никакой магии тут нет. Обычный класс с обычными методами.
     Этот класс ничего не знает про DI.
     """
+
+    sort_formatter = SortFormatter()
+    query_formatter = QueryFormatter()
 
     def __init__(self, redis: Redis, elastic: AsyncElasticsearch):
         self.redis = redis
@@ -78,70 +83,70 @@ class FilmService:
         await self.redis.set(str(film.uuid), film.model_dump_json(), FILM_CACHE_EXPIRE_IN_SECONDS)
 
     @staticmethod
-    async def _get_previous_record_number(page_number: int, size: int) -> int:
-        return (page_number - 1) * size - 1
-
-    @staticmethod
     async def _generate_record_key(record_number: int, sort: dict = None, filter_query: dict = None) -> str:
         return "movies/" + str(sort) + "/" + str(record_number) + "/" + str(filter_query)
 
     async def _get_search_after_from_elastic(
-        self, previous_record: int, sort: dict[str, Any], filter_query: dict
+        self, previous_record: int, sort: tuple[dict[str, Any]], filter_: dict
     ) -> Optional[list]:
-        """
+        """Gets search_after value from ES.
+
+        The itertools.chain.from_iterable is good here to transform a tuple of dicts to tuple of its keys.
+        tuple(
+            {key1: val1, key2: val2},
+            {key3: val3},
+            {key4: val4, key5: val5}
+        ) -> tuple(key1, key2, key3, key4, key5)
+
         Raises IndexError: if previous_record >= count of records in index
         """
         if previous_record == -1:
             return None
+        include_only = tuple(itertools.chain.from_iterable(sort)) if sort else None
 
         data = await self.elastic.search(
             from_=previous_record,
             size=1,
             index="movies",
             sort=sort,
-            source_includes=tuple(sort.keys()),
-            query=filter_query,
+            source_includes=include_only,
+            query=filter_,
         )
-        search_after = data["hits"]["hits"][0]["sort"]
+        if sort == ({"_score": "desc"},):
+            search_after = [data["hits"]["hits"][0]["_score"]]
+        else:
+            search_after = data["hits"]["hits"][0]["sort"]
         return search_after
 
-    @staticmethod
-    async def _format_sort_query(sort_q: str) -> dict[str, str]:
-        if sort_q:
-            return {"imdb_rating": "desc" if sort_q.startswith("-") else "asc"}
-        else:
-            return {"id": "asc"}
+    async def get_page(self, page_number: int, size: int, **kwargs) -> list[Film]:
+        """The function which gets page number, size of page and optional kwargs.
+        Returns the List of films from the related page.
 
-    @staticmethod
-    async def _format_filter_query(filter_q: UUID4) -> dict:
-        query = {"nested": {"path": "genre", "query": {"term": {"genre.id": str(filter_q)}}}}
-        return query
+        kwargs:
+            search_query - A dict with {'field_to_search': 'value'} to fuzzy search.
+            genre_uuid - A UUID4|str uuid of Genre to filter films for.
+            sort - A str name of field to make sort for. Default `asc`. Use: "-{sort}" for `desc`.
 
-    async def get_page(self, page_number: int, size: int, sort_q=None, filter_q=None) -> list[Film]:
-        """Не работает при page_number = 1000, size = 1"""
-        sort_query = await self._format_sort_query(sort_q)
-        filter_query = None
-        if filter_q:
-            filter_query = await self._format_filter_query(filter_q)
+        Known issues: breaks at page_number=1000, size=1.
+        """
+        sort_query = self.sort_formatter.format(**kwargs)
+        query = self.query_formatter.format(**kwargs)
 
-        previous_record_number = await self._get_previous_record_number(page_number, size)
-        previous_record_key = await self._generate_record_key(previous_record_number, sort_query, filter_query)
+        previous_record_number = (page_number - 1) * size - 1
+        previous_record_key = await self._generate_record_key(previous_record_number, sort_query, query)
 
         if await self._key_in_cache(previous_record_key):
             search_after = await self._get_search_after_from_cache(previous_record_key)
         else:
             try:
-                search_after = await self._get_search_after_from_elastic(
-                    previous_record_number, sort_query, filter_query
-                )
+                search_after = await self._get_search_after_from_elastic(previous_record_number, sort_query, query)
             except IndexError:
                 return []
             await self._put_search_after_to_cache(previous_record_key, search_after)
 
-        films_data = await self._search_after_films_from_elastic(size, search_after, sort_query, filter_query)
+        films_data = await self._search_after_films_from_elastic(size, search_after, sort_query, query)
 
-        future_search_after_number = await self._get_previous_record_number(page_number + 1, size)
-        future_search_after_key = await self._generate_record_key(future_search_after_number, sort_query, filter_query)
+        future_search_after_key = await self._generate_record_key(previous_record_number + size, sort_query, query)
 
         if not await self._key_in_cache(future_search_after_key):
             await self._put_search_after_to_cache(future_search_after_key, films_data[-1]["sort"])
@@ -149,7 +154,11 @@ class FilmService:
         return [Film(**film["_source"]) for film in films_data]
 
     async def _search_after_films_from_elastic(
-        self, size: int, search_after: dict[str, Any], sort: dict[str, Any], filter_query: dict[str, dict[str, str]]
+        self,
+        size: int,
+        search_after: dict[str, Any],
+        sort: tuple[dict[str, Any]],
+        filter_query: dict[str, dict[str, str]],
     ) -> Optional[list[Film]]:
         """Gets films from elastic using search_after scroll.
 
@@ -158,11 +167,11 @@ class FilmService:
         :param search_after: A dict with search_after param. Keys=fields, values=values of record to start from.
         :return: A list of Films.
         """
+
         films = await self.elastic.search(
             search_after=search_after, index="movies", sort=sort, size=size, query=filter_query
         )
         films_data = [film for film in films["hits"]["hits"]]
-
         return films_data
 
     async def _key_in_cache(self, key: KeyT) -> bool:
